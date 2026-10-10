@@ -203,6 +203,19 @@
       display: inline-block;
     }
 
+
+    /* Querformat: Namenskarte in die Ecke, damit das Produkt frei bleibt */
+    @media (orientation: landscape) {
+      #label {
+        left: auto;
+        right: max(16px, env(safe-area-inset-right));
+        bottom: max(16px, env(safe-area-inset-bottom));
+        transform: none;
+        min-width: 0;
+        width: 230px;
+      }
+    }
+
     /* A-Frame-Buttons (VR/AR/Vollbild) ausblenden */
     .a-enter-vr,
     .a-enter-ar {
@@ -395,7 +408,7 @@
 
     AFRAME.registerComponent('product-focus', {
       schema: {
-        size: { default: 0.55 },     // Anteil der halben Bildschirmbreite, den das Produkt im Fokus einnimmt
+        size: { default: 0.85 },     // Anteil der halben Bildschirmbreite, den das Produkt im Fokus einnimmt
         speed: { default: 6 }
       },
       init() {
@@ -517,7 +530,7 @@
         const up = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.getWorldQuaternion(new THREE.Quaternion()));
         const worldTarget = camPos.clone().add(dir.multiplyScalar(D)).add(up.multiplyScalar(halfV * D * 0.22));
         const half = Math.min(halfV, halfV * cam.aspect);
-        const size = cam.aspect > 1 ? this.data.size * 0.75 : this.data.size;   // Querformat etwas kleiner
+        const size = cam.aspect > 1 ? this.data.size * 0.68 : this.data.size;   // Querformat etwas kleiner
         const grow = (half * D * size) / i.focusInfo.radius;
         // Mittelpunkt statt Ursprung zentrieren (auch während der Drehung)
         const parent = i.obj.parent;
