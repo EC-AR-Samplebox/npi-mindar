@@ -243,7 +243,7 @@
   <div id="label">
     <div class="name"></div>
     <div class="sub">Tap to put back · pinch to zoom</div>
-    <a class="link" href="#" target="_blank" rel="noopener">View product →</a>
+    <a class="link" href="#">View product →</a>
   </div>
 
   <div id="hint">Point your camera at the <b>postcard</b> – keep the whole card in view, good light helps.<br><small>Tip: tap a product to take a closer look.</small></div>
@@ -578,6 +578,27 @@
       }
     });
 
+
+
+    /* Produkt-Link: direkt im selben Tab öffnen (Popup-Blocker auf Mobilgeräten umgehen) */
+    (function () {
+      const link = document.querySelector('#label .link');
+      let going = false;
+      const go = e => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (going || !link.href || link.getAttribute('href') === '#') return;
+        going = true;
+        try {
+          const sys = document.querySelector('a-scene').systems['mindar-image-system'];
+          if (sys) sys.stop();
+        } catch (err) {}
+        window.location.href = link.href;
+        setTimeout(() => { going = false; }, 1500);
+      };
+      link.addEventListener('click', go);
+      link.addEventListener('touchend', go);
+    })();
 
     const scene = document.querySelector('a-scene');
     const start = document.querySelector('#start');
