@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>NPI Card – AR auf der Postkarte</title>
+  <title>NPI Card – AR</title>
 
   <link rel="icon"
     href="https://view.publitas.com/84732/branding/favicon-5bf15be851d459cbe1b0c3fd5194679a62422147.ico">
@@ -177,7 +177,7 @@
       position: fixed;
       inset: 0;
       z-index: -1;
-      background: rgba(10, 10, 14, 0.62);
+      background: rgba(8, 8, 12, 0.82);
       opacity: 0;
       transition: opacity 0.35s ease;
       pointer-events: none;
@@ -215,29 +215,29 @@
 
   <!-- Start: Kamera braucht einen Tipp des Nutzers -->
   <div id="start">
-    <h1>Produkte auf der Postkarte</h1>
+    <h1>See the products on your card</h1>
     <p>
-      Lege die Postkarte vor dich hin und richte die Kamera darauf.
-      Die Produkte erscheinen direkt auf der Karte.
+      Place the postcard in front of you and point your camera at it.
+      The products will appear right on the card.
     </p>
-    <button id="start-button" type="button" disabled>Wird geladen …</button>
+    <button id="start-button" type="button" disabled>Loading …</button>
   </div>
 
-  <div id="status">Status: Seite geladen</div>
+  <div id="status">Status: page loaded</div>
 
   <div id="dim"></div>
 
   <div id="label">
     <div class="name"></div>
-    <div class="sub">Antippen zum Zurücklegen · zwei Finger zum Zoomen</div>
-    <a class="link" href="#" target="_blank" rel="noopener">Zum Produkt →</a>
+    <div class="sub">Tap to put back · pinch to zoom</div>
+    <a class="link" href="#" target="_blank" rel="noopener">View product →</a>
   </div>
 
-  <div id="hint">Richte die Kamera auf die <b>Postkarte</b> – möglichst die ganze Karte im Bild, gutes Licht hilft.<br><small>Tipp: Produkt antippen, um es heranzuholen.</small></div>
+  <div id="hint">Point your camera at the <b>postcard</b> – keep the whole card in view, good light helps.<br><small>Tip: tap a product to take a closer look.</small></div>
 
   <div id="error">
-    Die Kamera konnte nicht gestartet werden.<br>
-    Bitte erlaube den Kamerazugriff und öffne die Seite in Chrome (Android) oder Safari (iPhone).
+    The camera could not be started.<br>
+    Please allow camera access and open this page in Chrome (Android) or Safari (iPhone).
   </div>
 
 
@@ -279,11 +279,11 @@
   <script>
     /* ---------- Diagnose-Statuszeile ---------- */
     const statusEl = document.querySelector('#status');
-    const st = { modell: 'lädt …', kamera: 'aus', karte: '–', fehler: '' };
+    const st = { modell: 'loading …', kamera: 'off', karte: '–', fehler: '' };
     function showStatus() {
       statusEl.textContent =
-        'Modell: ' + st.modell + ' | Kamera: ' + st.kamera + ' | Karte: ' + st.karte +
-        (st.fehler ? '\nFehler: ' + st.fehler : '');
+        'Model: ' + st.modell + ' | Camera: ' + st.kamera + ' | Card: ' + st.karte +
+        (st.fehler ? '\nError: ' + st.fehler : '');
     }
     window.addEventListener('error', e => { st.fehler = (e.message || 'unbekannt').slice(0, 140); showStatus(); });
     window.addEventListener('unhandledrejection', e => { st.fehler = String(e.reason && e.reason.message || e.reason).slice(0, 140); showStatus(); });
@@ -293,7 +293,7 @@
     AFRAME.registerComponent('gltf-play', {
       init() {
         this.mixer = null;
-        this.el.addEventListener('model-error', () => { st.modell = 'FEHLER'; showStatus(); });
+        this.el.addEventListener('model-error', () => { st.modell = 'ERROR'; showStatus(); });
         this.el.addEventListener('model-loaded', () => {
           st.modell = 'ok'; showStatus();
           const model = this.el.getObject3D('mesh');
@@ -353,7 +353,7 @@
         try {
           const pmrem = new THREE.PMREMGenerator(this.el.renderer);
           this.el.object3D.environment = pmrem.fromScene(roomEnvScene(), 0.04).texture;
-        } catch (e) { console.warn('Umgebungslicht nicht verfügbar', e); }
+        } catch (e) { console.warn('Environment light not available', e); }
       }
     });
 
@@ -395,8 +395,7 @@
 
     AFRAME.registerComponent('product-focus', {
       schema: {
-        lift: { default: 0.09 },     // wie weit es aus der Karte kommt (Modell-Einheiten)
-        grow: { default: 2.5 },      // Vergrößerung
+        size: { default: 0.55 },     // Anteil der halben Bildschirmbreite, den das Produkt im Fokus einnimmt
         speed: { default: 6 }
       },
       init() {
@@ -495,6 +494,40 @@
         }
       },
 
+
+      /* Größe und Mittelpunkt des Produkts einmalig messen */
+      measure(i) {
+        i.obj.position.copy(i.pos0); i.obj.scale.copy(i.scl0);
+        i.obj.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(i.obj);
+        const c = box.getCenter(new THREE.Vector3());
+        const r = box.getSize(new THREE.Vector3()).length() / 2;
+        i.focusInfo = { radius: r, centerLocal: i.obj.worldToLocal(c.clone()) };
+      },
+
+      /* Zielposition (Elternraum) und Vergrößerung für "Mitte des Bildschirms" */
+      focusTarget(i) {
+        const cam = this.el.sceneEl.camera;
+        const camPos = cam.getWorldPosition(new THREE.Vector3());
+        const dir = cam.getWorldDirection(new THREE.Vector3());
+        const anchor = this.el.object3D.getWorldPosition(new THREE.Vector3());
+        const D = Math.max(0.2, camPos.distanceTo(anchor) * 0.6);
+        const halfV = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2);
+        // Etwas über der Bildmitte, damit die Namenskarte unten nichts verdeckt
+        const up = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.getWorldQuaternion(new THREE.Quaternion()));
+        const worldTarget = camPos.clone().add(dir.multiplyScalar(D)).add(up.multiplyScalar(halfV * D * 0.22));
+        const half = Math.min(halfV, halfV * cam.aspect);
+        const size = cam.aspect > 1 ? this.data.size * 0.75 : this.data.size;   // Querformat etwas kleiner
+        const grow = (half * D * size) / i.focusInfo.radius;
+        // Mittelpunkt statt Ursprung zentrieren (auch während der Drehung)
+        const parent = i.obj.parent;
+        const tLocal = parent.worldToLocal(worldTarget.clone());
+        const off = i.focusInfo.centerLocal.clone()
+          .multiply(new THREE.Vector3(i.scl0.x * grow, i.scl0.y * grow, i.scl0.z * grow))
+          .applyQuaternion(i.obj.quaternion);
+        return { pos: tLocal.sub(off), grow };
+      },
+
       tick(t, dt) {
         const k = Math.min(1, (dt / 1000) * this.data.speed);
         this.focus += ((this.active ? 1 : 0) - this.focus) * k;
@@ -508,10 +541,26 @@
           });
           i.t += (i.target - i.t) * k;
           const e = i.t * i.t * (3 - 2 * i.t);
-          // Heben entlang der Kartennormale (im liegenden Modell = +Y)
-          i.obj.position.set(i.pos0.x * (1 - e * 0.6), i.pos0.y + this.data.lift * e, i.pos0.z * (1 - e * 0.6));
-          const g = 1 + (this.data.grow - 1) * e;
+          if (e < 0.001) {
+            i.obj.position.copy(i.pos0);
+            i.obj.scale.copy(i.scl0);
+            return;
+          }
+          if (!i.focusInfo) this.measure(i);
+          // Aufrichten: Drehachse des Produkts (Eltern-Y) zur Bildschirm-Oberkante ausrichten
+          const cam = this.el.sceneEl.camera;
+          const parentQ = i.obj.parent.getWorldQuaternion(new THREE.Quaternion());
+          const camUp = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.getWorldQuaternion(new THREE.Quaternion()));
+          const upLocal = camUp.applyQuaternion(parentQ.clone().invert()).normalize();
+          const tilt = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), upLocal);
+          const tiltE = new THREE.Quaternion().slerp(tilt, e);
+          i.obj.quaternion.premultiply(tiltE);
+          const f = this.focusTarget(i);
+          // Position: von Kartenplatz zur Bildschirmmitte
+          i.obj.position.lerpVectors(i.pos0, f.pos, e);
+          const g = 1 + (f.grow - 1) * e;
           i.obj.scale.set(i.scl0.x * g, i.scl0.y * g, i.scl0.z * g);
+          if (i.target === 0 && e < 0.01) i.focusInfo = null;
         });
       }
     });
@@ -529,31 +578,31 @@
 
     const ready = () => {
       startButton.disabled = false;
-      startButton.textContent = 'Kamera starten';
+      startButton.textContent = 'Start camera';
     };
     if (scene.hasLoaded) ready(); else scene.addEventListener('loaded', ready);
 
     startButton.addEventListener('click', async () => {
       startButton.disabled = true;
-      startButton.textContent = 'Kamera wird gestartet …';
+      startButton.textContent = 'Starting camera …';
       try {
-        st.kamera = 'startet …'; showStatus();
+        st.kamera = 'starting …'; showStatus();
         await scene.systems['mindar-image-system'].start();
-        st.kamera = 'an'; st.karte = 'wird gesucht'; showStatus();
+        st.kamera = 'on'; st.karte = 'searching'; showStatus();
         start.classList.add('hidden');
         hint.classList.add('visible');
       } catch (e) {
         console.error(e);
-        st.kamera = 'FEHLER'; st.fehler = String(e && e.message || e).slice(0, 140); showStatus();
+        st.kamera = 'ERROR'; st.fehler = String(e && e.message || e).slice(0, 140); showStatus();
         error.classList.add('visible');
       }
     });
 
-    scene.addEventListener('arReady', () => { st.kamera = 'an'; showStatus(); });
-    scene.addEventListener('arError', e => { st.kamera = 'FEHLER (arError)'; showStatus(); error.classList.add('visible'); });
-    target.addEventListener('targetFound', () => { hint.classList.remove('visible'); st.karte = 'ERKANNT'; showStatus(); });
+    scene.addEventListener('arReady', () => { st.kamera = 'on'; showStatus(); });
+    scene.addEventListener('arError', e => { st.kamera = 'ERROR (arError)'; showStatus(); error.classList.add('visible'); });
+    target.addEventListener('targetFound', () => { hint.classList.remove('visible'); st.karte = 'FOUND'; showStatus(); });
     target.addEventListener('targetLost', () => {
-      hint.classList.add('visible'); st.karte = 'verloren'; showStatus();
+      hint.classList.add('visible'); st.karte = 'lost'; showStatus();
       const pf = document.querySelector('[product-focus]').components['product-focus'];
       if (pf) pf.setActive(null);
     });
