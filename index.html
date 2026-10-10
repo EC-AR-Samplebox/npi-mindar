@@ -137,6 +137,40 @@
       pointer-events: none;
     }
 
+
+    /* Produktname beim Heranholen */
+    #label {
+      position: fixed;
+      left: 50%;
+      bottom: max(40px, env(safe-area-inset-bottom));
+      transform: translateX(-50%);
+      z-index: 12;
+      min-width: 220px;
+      max-width: 86vw;
+      padding: 12px 18px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.95);
+      color: #111;
+      text-align: center;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+      display: none;
+    }
+
+    #label.visible {
+      display: block;
+    }
+
+    #label .name {
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    #label .sub {
+      margin-top: 3px;
+      font-size: 12px;
+      color: #666;
+    }
+
     /* A-Frame-Buttons (VR/AR/Vollbild) ausblenden */
     .a-enter-vr,
     .a-enter-ar {
@@ -159,7 +193,9 @@
 
   <div id="status">Status: Seite geladen</div>
 
-  <div id="hint">Richte die Kamera auf die <b>Postkarte</b> – möglichst die ganze Karte im Bild, gutes Licht hilft.</div>
+  <div id="label"><div class="name"></div><div class="sub">Antippen zum Zurücklegen · zwei Finger zum Zoomen</div></div>
+
+  <div id="hint">Richte die Kamera auf die <b>Postkarte</b> – möglichst die ganze Karte im Bild, gutes Licht hilft.<br><small>Tipp: Produkt antippen, um es heranzuholen.</small></div>
 
   <div id="error">
     Die Kamera konnte nicht gestartet werden.<br>
@@ -194,6 +230,7 @@
         rotation="90 0 0"
         position="0 0 0"
         gltf-play
+        product-focus
         hide-card="name: NPI-Card-1">
       </a-gltf-model>
     </a-entity>
@@ -282,6 +319,127 @@
       }
     });
 
+
+    /* =========================================
+       INTERAKTION: Produkt antippen = heranholen,
+       zwei Finger = ganzes Set zoomen
+       ========================================= */
+    const PRODUKTE = {
+      'Kappe': 'Easy Fit Parallel Plug',
+      '10060626': 'Barrel Plug',
+      '10083000': 'Dual Fit Vented Cap – Plug · Silicone',
+      '10083000001': 'Dual Fit Vented Cap – Plug · EPDM',
+      '10083000.001': 'Dual Fit Vented Cap – Plug · EPDM',
+      '10085653001': 'Flat Washer – TPV',
+      '10085653.001': 'Flat Washer – TPV',
+      '10008737': 'Diaphragm Grommet',
+      '10638491': 'Splice Protector',
+      '10160558': 'Grommet Strip',
+      '10013182': 'Quarter Turn Spacers'
+    };
+
+    AFRAME.registerComponent('product-focus', {
+      schema: {
+        lift: { default: 0.09 },     // wie weit es aus der Karte kommt (Modell-Einheiten)
+        grow: { default: 2.5 },      // Vergrößerung
+        speed: { default: 6 }
+      },
+      init() {
+        this.items = [];
+        this.active = null;
+        this.raycaster = new THREE.Raycaster();
+        this.label = document.querySelector('#label');
+        this.baseScale = 2;
+        this.userScale = 1;
+
+        this.el.addEventListener('model-loaded', () => {
+          const root = this.el.getObject3D('mesh');
+          root.children.forEach(o => {
+            if (!PRODUKTE[o.name]) return;
+            this.items.push({
+              obj: o,
+              name: PRODUKTE[o.name],
+              pos0: o.position.clone(),
+              scl0: o.scale.clone(),
+              t: 0, target: 0
+            });
+          });
+        });
+
+        const canvas = () => this.el.sceneEl.canvas;
+        let down = null, pinch = null;
+
+        window.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, n: Date.now() }; });
+        window.addEventListener('pointerup', e => {
+          if (!down || pinch) { down = null; return; }
+          const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+          if (moved < 12 && Date.now() - down.n < 600) this.tap(e.clientX, e.clientY);
+          down = null;
+        });
+
+        window.addEventListener('touchstart', e => {
+          if (e.touches.length === 2) {
+            const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            pinch = { d0: d, s0: this.userScale };
+          }
+        }, { passive: true });
+        window.addEventListener('touchmove', e => {
+          if (pinch && e.touches.length === 2) {
+            const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            this.userScale = Math.min(3, Math.max(0.6, pinch.s0 * d / pinch.d0));
+            const s = this.baseScale * this.userScale;
+            this.el.object3D.scale.set(s, s, s);
+          }
+        }, { passive: true });
+        window.addEventListener('touchend', e => { if (e.touches.length < 2) setTimeout(() => { pinch = null; }, 50); }, { passive: true });
+      },
+
+      tap(x, y) {
+        const cam = this.el.sceneEl.camera;
+        const rect = this.el.sceneEl.canvas.getBoundingClientRect();
+        const ndc = new THREE.Vector2(((x - rect.left) / rect.width) * 2 - 1, -((y - rect.top) / rect.height) * 2 + 1);
+        this.raycaster.setFromCamera(ndc, cam);
+        const objs = this.items.map(i => i.obj);
+        const hits = this.raycaster.intersectObjects(objs, true);
+        let hit = null;
+        if (hits.length) {
+          let o = hits[0].object;
+          while (o && !objs.includes(o)) o = o.parent;
+          hit = this.items.find(i => i.obj === o) || null;
+        }
+        if (!hit || hit === this.active) {
+          this.setActive(null);
+        } else {
+          this.setActive(hit);
+        }
+      },
+
+      setActive(item) {
+        this.items.forEach(i => { i.target = (i === item) ? 1 : 0; });
+        this.active = item;
+        if (item) {
+          this.label.querySelector('.name').textContent = item.name;
+          this.label.classList.add('visible');
+          document.querySelector('#hint').classList.remove('visible');
+        } else {
+          this.label.classList.remove('visible');
+        }
+      },
+
+      tick(t, dt) {
+        const k = Math.min(1, (dt / 1000) * this.data.speed);
+        this.items.forEach(i => {
+          i.t += (i.target - i.t) * k;
+          const e = i.t * i.t * (3 - 2 * i.t);
+          // Heben entlang der Kartennormale (im liegenden Modell = +Y)
+          i.obj.position.set(i.pos0.x * (1 - e * 0.6), i.pos0.y + this.data.lift * e, i.pos0.z * (1 - e * 0.6));
+          const g = 1 + (this.data.grow - 1) * e;
+          i.obj.scale.set(i.scl0.x * g, i.scl0.y * g, i.scl0.z * g);
+        });
+      }
+    });
+
+
     const scene = document.querySelector('a-scene');
     const start = document.querySelector('#start');
     const startButton = document.querySelector('#start-button');
@@ -317,7 +475,11 @@
     scene.addEventListener('arReady', () => { st.kamera = 'an'; showStatus(); });
     scene.addEventListener('arError', e => { st.kamera = 'FEHLER (arError)'; showStatus(); error.classList.add('visible'); });
     target.addEventListener('targetFound', () => { hint.classList.remove('visible'); st.karte = 'ERKANNT'; showStatus(); });
-    target.addEventListener('targetLost', () => { hint.classList.add('visible'); st.karte = 'verloren'; showStatus(); });
+    target.addEventListener('targetLost', () => {
+      hint.classList.add('visible'); st.karte = 'verloren'; showStatus();
+      const pf = document.querySelector('[product-focus]').components['product-focus'];
+      if (pf) pf.setActive(null);
+    });
   </script>
 
 </body>
