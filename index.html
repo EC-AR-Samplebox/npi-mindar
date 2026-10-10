@@ -171,6 +171,38 @@
       color: #666;
     }
 
+
+    /* Abdunkeln des Kamerabildes im Fokus (liegt zwischen Video und 3D) */
+    #dim {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      background: rgba(10, 10, 14, 0.62);
+      opacity: 0;
+      transition: opacity 0.35s ease;
+      pointer-events: none;
+    }
+
+    #dim.visible {
+      opacity: 1;
+    }
+
+    #label .link {
+      display: none;
+      margin-top: 10px;
+      padding: 9px 16px;
+      border-radius: 999px;
+      background: #111;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    #label .link.visible {
+      display: inline-block;
+    }
+
     /* A-Frame-Buttons (VR/AR/Vollbild) ausblenden */
     .a-enter-vr,
     .a-enter-ar {
@@ -193,7 +225,13 @@
 
   <div id="status">Status: Seite geladen</div>
 
-  <div id="label"><div class="name"></div><div class="sub">Antippen zum Zurücklegen · zwei Finger zum Zoomen</div></div>
+  <div id="dim"></div>
+
+  <div id="label">
+    <div class="name"></div>
+    <div class="sub">Antippen zum Zurücklegen · zwei Finger zum Zoomen</div>
+    <a class="link" href="#" target="_blank" rel="noopener">Zum Produkt →</a>
+  </div>
 
   <div id="hint">Richte die Kamera auf die <b>Postkarte</b> – möglichst die ganze Karte im Bild, gutes Licht hilft.<br><small>Tipp: Produkt antippen, um es heranzuholen.</small></div>
 
@@ -338,6 +376,23 @@
       '10013182': 'Quarter Turn Spacers'
     };
 
+
+    /* =========================================
+       PRODUKT-LINKS – hier die Adressen eintragen.
+       Leer lassen = kein Button für dieses Produkt.
+       ========================================= */
+    const LINKS = {
+      'Easy Fit Parallel Plug': 'https://www.essentracomponents.com/en-gb/new-products',
+      'Barrel Plug': 'https://www.essentracomponents.com/en-gb/new-products',
+      'Dual Fit Vented Cap – Plug · Silicone': 'https://www.essentracomponents.com/en-gb/new-products',
+      'Dual Fit Vented Cap – Plug · EPDM': 'https://www.essentracomponents.com/en-gb/new-products',
+      'Flat Washer – TPV': 'https://www.essentracomponents.com/en-gb/new-products',
+      'Diaphragm Grommet': 'https://www.essentracomponents.com/en-gb/new-products',
+      'Splice Protector': 'https://www.essentracomponents.com/en-gb/new-products',
+      'Grommet Strip': 'https://www.essentracomponents.com/en-gb/new-products',
+      'Quarter Turn Spacers': 'https://www.essentracomponents.com/en-gb/new-products'
+    };
+
     AFRAME.registerComponent('product-focus', {
       schema: {
         lift: { default: 0.09 },     // wie weit es aus der Karte kommt (Modell-Einheiten)
@@ -351,13 +406,22 @@
         this.label = document.querySelector('#label');
         this.baseScale = 2;
         this.userScale = 1;
+        this.focus = 0;
+        this.dim = document.querySelector('#dim');
 
         this.el.addEventListener('model-loaded', () => {
           const root = this.el.getObject3D('mesh');
           root.children.forEach(o => {
             if (!PRODUKTE[o.name]) return;
+            const mats = [];
+            o.traverse(m => {
+              if (!m.isMesh) return;
+              m.material = m.material.clone();
+              mats.push({ m: m.material, op: m.material.opacity, tr: m.material.transparent });
+            });
             this.items.push({
               obj: o,
+              mats,
               name: PRODUKTE[o.name],
               pos0: o.position.clone(),
               scl0: o.scale.clone(),
@@ -371,6 +435,7 @@
 
         window.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, n: Date.now() }; });
         window.addEventListener('pointerup', e => {
+          if (e.target.closest && e.target.closest('#label .link')) { down = null; return; }
           if (!down || pinch) { down = null; return; }
           const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
           if (moved < 12 && Date.now() - down.n < 600) this.tap(e.clientX, e.clientY);
@@ -417,6 +482,10 @@
       setActive(item) {
         this.items.forEach(i => { i.target = (i === item) ? 1 : 0; });
         this.active = item;
+        this.dim.classList.toggle('visible', !!item);
+        const link = this.label.querySelector('.link');
+        if (item && LINKS[item.name]) { link.href = LINKS[item.name]; link.classList.add('visible'); }
+        else link.classList.remove('visible');
         if (item) {
           this.label.querySelector('.name').textContent = item.name;
           this.label.classList.add('visible');
@@ -428,7 +497,15 @@
 
       tick(t, dt) {
         const k = Math.min(1, (dt / 1000) * this.data.speed);
+        this.focus += ((this.active ? 1 : 0) - this.focus) * k;
         this.items.forEach(i => {
+          const fade = (i === this.active) ? 1 : 1 - 0.9 * this.focus;
+          i.mats.forEach(x => {
+            const o = x.op * fade;
+            x.m.opacity = o;
+            x.m.transparent = x.tr || o < 0.999;
+            x.m.depthWrite = o > 0.5;
+          });
           i.t += (i.target - i.t) * k;
           const e = i.t * i.t * (3 - 2 * i.t);
           // Heben entlang der Kartennormale (im liegenden Modell = +Y)
